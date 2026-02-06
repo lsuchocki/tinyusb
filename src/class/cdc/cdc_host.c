@@ -701,13 +701,23 @@ bool cdch_xfer_cb(uint8_t daddr, uint8_t ep_addr, xfer_result_t event, uint32_t 
   } else if (ep_addr == p_cdc->stream.rx.ep_addr) {
     #if CFG_TUH_CDC_FTDI
     if (p_cdc->serial_drid == SERIAL_DRIVER_FTDI) {
-      // FTDI reserve 2 bytes for status
+      // FTDI reserve 2 bytes for status for every URB transferred.
       // uint8_t status[2] = {p_cdc->stream.rx.ep_buf[0], p_cdc->stream.rx.ep_buf[1]};
-      if (xferred_bytes > 2) {
-        tu_edpt_stream_read_xfer_complete_with_buf(&p_cdc->stream.rx, p_cdc->stream.rx.ep_buf + 2, xferred_bytes - 2);
+      uint8_t *ep_buf = p_cdc->stream.rx.ep_buf;
 
-        tuh_cdc_rx_cb(idx); // invoke receive callback
+      while (xferred_bytes > 2) {
+        uint32_t copy_len = TU_MIN((uint32_t)p_cdc->stream.rx.mps - 2, xferred_bytes - 2);
+
+        tu_edpt_stream_read_xfer_complete_with_buf(&p_cdc->stream.rx, ep_buf + 2, copy_len);
+
+        ep_buf += (copy_len + 2);
+        xferred_bytes -= (copy_len + 2);
       }
+      /* If we copied anything the buffer,
+       * it shouldn't be at the beginning anymore */
+      if (ep_buf != p_cdc->stream.rx.ep_buf)
+        tuh_cdc_rx_cb(idx); // invoke receive callback
+
     } else
     #endif
     {
