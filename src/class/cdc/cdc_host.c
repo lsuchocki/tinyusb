@@ -713,8 +713,7 @@ bool cdch_xfer_cb(uint8_t daddr, uint8_t ep_addr, xfer_result_t event, uint32_t 
         ep_buf += (copy_len + 2);
         xferred_bytes -= (copy_len + 2);
       }
-      /* If we copied anything the buffer,
-       * it shouldn't be at the beginning anymore */
+      // if we copied anything the buffer, it shouldn't be at the beginning anymore
       if (ep_buf != p_cdc->stream.rx.ep_buf)
         tuh_cdc_rx_cb(idx); // invoke receive callback
 
