@@ -181,6 +181,10 @@ bool tuh_cdc_set_line_coding(uint8_t idx, const cdc_line_coding_t *line_coding, 
 // CFG_TUH_CDC_LINE_CODING_ON_ENUM is not defined
 // bool tuh_cdc_get_line_coding(uint8_t idx, cdc_line_coding_t* coding);
 
+// Request to set flow control
+bool tuh_cdc_set_flow_control(uint8_t idx, cdc_flow_control_t const flow_control,
+                            tuh_xfer_cb_t complete_cb, uintptr_t user_data);
+
 // Connect by set both DTR, RTS
 TU_ATTR_ALWAYS_INLINE static inline bool tuh_cdc_connect(uint8_t idx, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
   return tuh_cdc_set_control_line_state(idx, CDC_CONTROL_LINE_STATE_DTR | CDC_CONTROL_LINE_STATE_RTS, complete_cb,

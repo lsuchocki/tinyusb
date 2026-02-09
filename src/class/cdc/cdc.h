@@ -41,6 +41,14 @@
 /** \defgroup ClassDriver_CDC_Common Common Definitions
  *  @{ */
 
+typedef enum
+{
+  CDC_FLOW_CONTROL_NONE = 0,
+  CDC_FLOW_CONTROL_XON_XOFF = 1,
+  CDC_FLOW_CONTROL_RTS_CTS = 2,
+  CDC_FLOW_CONTROL_DTR_DSR = 3,
+} cdc_flow_control_t;
+
 //--------------------------------------------------------------------+
 // CDC Communication Interface Class
 //--------------------------------------------------------------------+

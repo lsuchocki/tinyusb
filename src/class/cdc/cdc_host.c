@@ -69,6 +69,7 @@ typedef struct {
   struct {
     TU_ATTR_ALIGNED(4) cdc_line_coding_t coding; // Baudrate, stop bits, parity, data width
     cdc_line_control_state_t control_state;      // DTR, RTS
+    cdc_flow_control_t flow_control;
   } line, requested_line;
 
   tuh_xfer_cb_t user_complete_cb; // required since we handle request internally first
@@ -132,6 +133,7 @@ static void     ftdi_internal_control_complete(cdch_interface_t *p_cdc, tuh_xfer
 static bool     ftdi_set_baudrate(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data);
 static bool     ftdi_set_data_format(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data);
 static bool     ftdi_set_modem_ctrl(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data);
+static bool     ftdi_set_flow_control(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data);
   #endif
 
   //------------- CP210X prototypes -------------//
@@ -203,7 +205,7 @@ typedef struct {
   // internal request complete handler to update line state
   void (*const request_complete)(cdch_interface_t *p_cdc, tuh_xfer_t *xfer);
 
-  serial_driver_func_t set_control_line_state, set_baudrate, set_data_format, set_line_coding;
+  serial_driver_func_t set_control_line_state, set_baudrate, set_data_format, set_line_coding, set_flow_control;
 
   #if CFG_TUSB_DEBUG && CFG_TUSB_DEBUG >= CFG_TUH_CDC_LOG_LEVEL
   const char * name;
@@ -228,6 +230,7 @@ static const cdch_serial_driver_t serial_drivers[] = {
       .set_baudrate           = acm_set_line_coding,
       .set_data_format        = acm_set_line_coding,
       .set_line_coding        = acm_set_line_coding,
+      .set_flow_control       = NULL,
       DRIVER_NAME_DECLARE("ACM")
   },
 
@@ -242,6 +245,7 @@ static const cdch_serial_driver_t serial_drivers[] = {
       .set_baudrate           = ftdi_set_baudrate,
       .set_data_format        = ftdi_set_data_format,
       .set_line_coding        = NULL, // 2 stage set line coding
+      .set_flow_control       = ftdi_set_flow_control,
       DRIVER_NAME_DECLARE("FTDI")
   },
   #endif
@@ -257,6 +261,7 @@ static const cdch_serial_driver_t serial_drivers[] = {
       .set_baudrate           = cp210x_set_baudrate,
       .set_data_format        = cp210x_set_data_format,
       .set_line_coding        = NULL, // 2 stage set line coding
+      .set_flow_control       = NULL,
       DRIVER_NAME_DECLARE("CP210x")
   },
   #endif
@@ -273,6 +278,7 @@ static const cdch_serial_driver_t serial_drivers[] = {
       .set_baudrate           = ch34x_set_baudrate,
       .set_data_format        = ch34x_set_data_format,
       .set_line_coding        = NULL, // 2 stage set line coding
+      .set_flow_control       = NULL,
       DRIVER_NAME_DECLARE("CH34x")
   },
   #endif
@@ -288,6 +294,7 @@ static const cdch_serial_driver_t serial_drivers[] = {
       .set_baudrate           = pl2303_set_line_coding,
       .set_data_format        = pl2303_set_line_coding,
       .set_line_coding        = pl2303_set_line_coding,
+      .set_flow_control       = NULL,
       DRIVER_NAME_DECLARE("PL2303")
   }
   #endif
@@ -638,6 +645,25 @@ bool tuh_cdc_set_line_coding(uint8_t idx, cdc_line_coding_t const *line_coding,
   return true;
 }
 
+bool tuh_cdc_set_flow_control(uint8_t idx, cdc_flow_control_t const flow_control,
+                            tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
+  cdch_interface_t *p_cdc = get_itf(idx);
+  TU_VERIFY(p_cdc && p_cdc->serial_drid < SERIAL_DRIVER_COUNT);
+  TU_LOG_CDC(p_cdc, "set flow control %i", flow_control);
+  const cdch_serial_driver_t *driver = &serial_drivers[p_cdc->serial_drid];
+
+  p_cdc->requested_line = p_cdc->line; // keep current line coding
+  p_cdc->requested_line.flow_control = flow_control;
+  p_cdc->user_complete_cb = complete_cb;
+  TU_VERIFY(driver->set_flow_control(p_cdc, complete_cb ? cdch_internal_control_complete : NULL, user_data));
+
+  if (!complete_cb) {
+    p_cdc->line.flow_control = flow_control;
+  }
+
+  return true;
+}
+
 //--------------------------------------------------------------------+
 // CLASS-USBH API
 //--------------------------------------------------------------------+
@@ -837,7 +863,7 @@ static bool set_line_state_on_enum(cdch_interface_t *p_cdc, tuh_xfer_t *xfer) {
     ENUM_SET_LINE_CONTROL,
     ENUM_SET_LINE_COMPLETE,
   };
-  #ifdef CFG_TUH_CDC_LINE_CODING_ON_ENUM
+  #if defined(CFG_TUH_CDC_LINE_CODING_ON_ENUM) || defined(CFG_TUH_CDC_LINE_CONTROL_ON_ENUM)
   const uint8_t idx = get_idx_by_ptr(p_cdc);
   #endif
   const uintptr_t state = xfer->user_data;
@@ -1187,6 +1213,21 @@ static bool ftdi_set_modem_ctrl(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_
                                     (p_cdc->requested_line.control_state.rts ? FTDI_SIO_SET_RTS_HIGH : FTDI_SIO_SET_RTS_LOW));
   return ftdi_set_request(p_cdc, FTDI_SIO_SET_MODEM_CTRL_REQUEST, FTDI_SIO_SET_MODEM_CTRL_REQUEST_TYPE,
                           line_state, p_cdc->ftdi.channel, complete_cb ? cdch_internal_control_complete : NULL, user_data);
+}
+
+static bool ftdi_set_flow_control(cdch_interface_t *p_cdc, tuh_xfer_cb_t complete_cb, uintptr_t user_data) {
+  uint16_t flow_control;
+
+  switch (p_cdc->requested_line.flow_control) {
+      case CDC_FLOW_CONTROL_XON_XOFF: flow_control = FTDI_SIO_XON_XOFF_HS; break;
+      case CDC_FLOW_CONTROL_RTS_CTS: flow_control = FTDI_SIO_RTS_CTS_HS; break;
+      case CDC_FLOW_CONTROL_DTR_DSR: flow_control = FTDI_SIO_DTR_DSR_HS; break;
+      case CDC_FLOW_CONTROL_NONE:
+      default: flow_control = FTDI_SIO_DISABLE_FLOW_CTRL; break;
+  }
+
+  return ftdi_set_request(p_cdc, FTDI_SIO_SET_FLOW_CTRL_REQUEST, FTDI_SIO_SET_FLOW_CTRL_REQUEST_TYPE,
+                          flow_control, p_cdc->ftdi.channel, complete_cb ? cdch_internal_control_complete : NULL, user_data);
 }
 
 //------------- Enumeration -------------//
