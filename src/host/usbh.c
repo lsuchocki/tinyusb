@@ -1843,6 +1843,7 @@ static bool enum_parse_configuration_desc(uint8_t dev_addr, tusb_desc_configurat
   uint16_t const total_len = tu_le16toh(desc_cfg->wTotalLength);
   uint8_t const* desc_end = ((uint8_t const*) desc_cfg) + total_len;
   uint8_t const* p_desc   = tu_desc_next(desc_cfg);
+  int driver_bound = 0;
 
   TU_LOG_USBH("Parsing Configuration descriptor (wTotalLength = %u)\r\n", total_len);
 
@@ -1880,6 +1881,7 @@ static bool enum_parse_configuration_desc(uint8_t dev_addr, tusb_desc_configurat
           tu_bind_driver_to_ep_itf(drv_id, dev->ep2drv, dev->itf2drv, CFG_TUH_INTERFACE_MAX, p_desc, drv_len);
 
           p_desc += drv_len; // next Interface
+          driver_bound++;    // record that we bound something to this device
           break;             // exit driver find loop
         }
       }
@@ -1893,6 +1895,9 @@ static bool enum_parse_configuration_desc(uint8_t dev_addr, tusb_desc_configurat
                   desc_itf->bInterfaceSubClass, desc_itf->bInterfaceProtocol);
     }
   }
+
+  if (! driver_bound)
+    tuh_mount_failed_cb(dev_addr);
 
   return true;
 }

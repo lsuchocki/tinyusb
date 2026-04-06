@@ -131,7 +131,7 @@ bool tuh_enum_descriptor_configuration_cb(uint8_t daddr, uint8_t cfg_index, cons
 void tuh_mount_cb (uint8_t daddr);
 
 // Invoked when a device failed to mount during enumeration process
-// void tuh_mount_failed_cb (uint8_t daddr);
+ void tuh_mount_failed_cb (uint8_t daddr);
 
 // Invoked when a device is unmounted (detached)
 void tuh_umount_cb(uint8_t daddr);
