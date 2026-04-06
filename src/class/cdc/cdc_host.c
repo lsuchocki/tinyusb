@@ -652,6 +652,10 @@ bool tuh_cdc_set_flow_control(uint8_t idx, cdc_flow_control_t const flow_control
   TU_LOG_CDC(p_cdc, "set flow control %i", flow_control);
   const cdch_serial_driver_t *driver = &serial_drivers[p_cdc->serial_drid];
 
+  if (driver->set_flow_control == NULL) {
+    return true;
+  }
+
   p_cdc->requested_line = p_cdc->line; // keep current line coding
   p_cdc->requested_line.flow_control = flow_control;
   p_cdc->user_complete_cb = complete_cb;
